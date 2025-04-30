@@ -18,7 +18,7 @@ def predict():
     if not text:
         return jsonify({'error': 'No text provided'}), 400
 
-    features = vectorizer.transform([text])2135.55.
+    features = vectorizer.transform([text])
     prediction = model.predict(features)
     
     return jsonify({'prediction': int(prediction[0])})
