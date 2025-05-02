@@ -4,6 +4,8 @@ import joblib
 import os
 import traceback
 import numpy as np
+from sklearn.feature_extraction.text import strip_accents_ascii
+import re
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -19,7 +21,37 @@ except Exception as e:
     model = None
     vectorizer = None
 
-# Health check route
+def preprocess_text(text):
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Remove special characters and numbers but keep important punctuation
+    text = re.sub(r'[^a-z\s.,!?]', '', text)
+    
+    # Remove extra whitespace
+    text = ' '.join(text.split())
+    
+    # Strip accents
+    text = strip_accents_ascii(text)
+    
+    return text
+
+def get_confidence_score(proba):
+    # Get probability scores for both classes
+    fraud_prob = proba[1]
+    legitimate_prob = proba[0]
+    
+    # Calculate confidence based on the difference between probabilities
+    # This gives higher confidence when the model is more certain
+    confidence = abs(fraud_prob - legitimate_prob)
+    
+    # Scale confidence to be between 0.5 and 1.0
+    # If probabilities are close, confidence will be closer to 0.5
+    # If probabilities are far apart, confidence will be closer to 1.0
+    scaled_confidence = 0.5 + (confidence * 0.5)
+    
+    return scaled_confidence
+
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({'message': 'Email Fraud Detection API is live'}), 200
@@ -35,18 +67,24 @@ def predict():
         if not text:
             return jsonify({'error': 'No text provided'}), 400
 
-        features = vectorizer.transform([text])
+        # Preprocess the text
+        processed_text = preprocess_text(text)
+        
+        # Transform text using vectorizer
+        features = vectorizer.transform([processed_text])
+        
+        # Get prediction and probability scores
         prediction = model.predict(features)[0]
         prediction_proba = model.predict_proba(features)[0]
-        accuracy = max(prediction_proba)  # Get the confidence score
-
-        label = 'fraud' if prediction == 1 else 'not fraud'
+        
+        # Calculate confidence score
+        confidence = get_confidence_score(prediction_proba)
 
         return jsonify({
             'prediction': int(prediction),
-            'label': label,
-            'accuracy': float(accuracy),
-            'processed_text': text  # For now, returning the original text
+            'label': 'fraud' if prediction == 1 else 'not fraud',
+            'accuracy': float(confidence),
+            'processed_text': processed_text
         }), 200
 
     except Exception as e:
